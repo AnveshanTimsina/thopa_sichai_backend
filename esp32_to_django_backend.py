@@ -33,7 +33,7 @@ payload = {
     "metadata": {
       "location": "ku",
     },
-    "ip_address": "192.168.16.100"
+    "ip_address": ip
   }
 
 headers = {
