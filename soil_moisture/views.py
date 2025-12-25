@@ -297,18 +297,13 @@ def latest_soil_moisture(request):
                 status_code=status.HTTP_404_NOT_FOUND
             )
 
-        serializer = SoilMoistureSerializer(latest)
-
         motor_decision = determine_motor_state(latest.data, threshold)
 
-        return create_response(
-            success=True,
-            data={
-                'latest': serializer.data,
-                'motor_decision': motor_decision,
-            },
-            message='Latest record retrieved'
-        )
+        payload = {
+            'motor_state': motor_decision.get('motor_state'),
+            'reading_value': motor_decision.get('reading_value'),
+        }
+        return Response(payload, status=status.HTTP_200_OK)
 
     except Exception as e:
         logger.error(f"Error retrieving latest SoilMoisture record: {str(e)}", exc_info=True)
