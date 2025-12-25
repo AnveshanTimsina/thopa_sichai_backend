@@ -25,3 +25,9 @@ class SoilMoisture(models.Model):
     def __str__(self):
         return f"SoilMoisture {self.id} - {self.ip_address}"
 
+class MotorState(models.Model):
+    is_on = models.BooleanField(default=False)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return "ON" if self.is_on else "OFF"

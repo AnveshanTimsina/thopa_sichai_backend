@@ -6,6 +6,7 @@ from django.core.exceptions import ValidationError
 from django.db import IntegrityError
 from .models import SoilMoisture
 from .serializers import SoilMoistureSerializer
+from .services import determine_motor_state
 from django.views.decorators.csrf import csrf_exempt
 
 logger = logging.getLogger('soil_moisture')
@@ -261,3 +262,60 @@ def receive_soil_moisture(request):
         return Response({"status": "ok"}, status=201)
 
     return Response(serializer.errors, status=400)
+
+
+@api_view(['GET'])
+def latest_soil_moisture(request):
+    """
+    GET endpoint to retrieve the latest SoilMoisture record and a motor decision.
+
+    Query params:
+    - `threshold` (optional float): moisture threshold to decide motor state. Default: 30.0
+    """
+    try:
+        threshold_param = request.query_params.get('threshold')
+        DEFAULT_THRESHOLD = 40.0
+
+        if threshold_param is None:
+            threshold = DEFAULT_THRESHOLD
+        else:
+            try:
+                threshold = float(threshold_param)
+            except ValueError:
+                return create_response(
+                    success=False,
+                    errors={'threshold': 'Threshold must be a numeric value.'},
+                    status_code=status.HTTP_400_BAD_REQUEST
+                )
+
+        latest = SoilMoisture.objects.order_by('-created_at').first()
+
+        if latest is None:
+            return create_response(
+                success=False,
+                errors={'detail': 'No SoilMoisture records found.'},
+                status_code=status.HTTP_404_NOT_FOUND
+            )
+
+        serializer = SoilMoistureSerializer(latest)
+
+        motor_decision = determine_motor_state(latest.data, threshold)
+
+        return create_response(
+            success=True,
+            data={
+                'latest': serializer.data,
+                'motor_decision': motor_decision,
+            },
+            message='Latest record retrieved'
+        )
+
+    except Exception as e:
+        logger.error(f"Error retrieving latest SoilMoisture record: {str(e)}", exc_info=True)
+        return create_response(
+            success=False,
+            errors={'detail': 'An error occurred while retrieving the latest record'},
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+
