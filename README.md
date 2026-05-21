@@ -1,331 +1,106 @@
-# Thopa Sichai - Soil Moisture API
+# Thopa Sichai — Soil Moisture IoT Platform
 
-A Django REST Framework API for managing soil moisture data with PostgreSQL database.
+An end-to-end IoT demo platform developed for KU Hackfest 2025 and later improved on, that showcases a secure, production-oriented integration between ESP32 edge devices (MicroPython) and a Django REST Framework backend.
+
+**Key highlights:**
+
+- Device registry for multi-node deployments (auto-registration for new nodes)
+- Token-based API authentication for IoT devices (`Token` header)
+- Robust telemetry ingestion with JSON fields and strong validation
+- Per-device actuation control (server-driven motor state)
+- Defensive MicroPython client code with network and hardware failsafes
+
+## Overview
+
+`Thopa Sichai` collects soil moisture telemetry from distributed ESP32 devices and provides a web API for querying and controlling water pumps per device. The backend implements a `Device` registry which allows the server to manage many sensors independently.
+
+## Architecture
+
+- ESP32 devices run a MicroPython script (`esp32/esp32_to_django_backend.py`) that:
+  - Reads ADC values, computes moisture percentage
+  - Posts telemetry to `/api/soil-moisture/receive/` with `Authorization: Token <...>`
+  - Polls `/api/soil-moisture/latest/?device_id=<id>` to receive motor instructions
+- Django REST Framework serves the API and persists telemetry in `SoilMoisture` model records. Each reading can be tied to a `Device` model instance.
 
 ## Features
 
-- 4 unauthenticated REST API endpoints for CRUD operations
-- PostgreSQL database with JSONB fields for flexible data storage
-- Comprehensive logging and error handling
-- Input validation and structured response formatting
-- UUID primary keys
-- Automatic timestamp tracking
+- Token authentication for IoT devices using `rest_framework.authtoken`
+- Device auto-registration when telemetry includes `metadata.device_id`
+- Flexible telemetry storage with `JSONField` for arbitrary sensor payloads
+- Pagination, input validation, and structured API responses
+- Motor decision service (`determine_motor_state`) and per-device `MotorState`
 
-## Requirements
+## Security and Hardening
+
+- API access for telemetry ingestion and actuation endpoints requires DRF token authentication. Generate a token for each device and embed it in the device header: `Authorization: Token <key>`.
+- Avoid placing tokens or secrets in code for production. Use environment variables or a secret manager.
+- Default `DEBUG=False` for production and ensure `ALLOWED_HOSTS` and HTTPS are configured.
+- Rate limiting via DRF throttle classes is enabled in `core/settings.py`.
+
+## Setup (Local Development)
+
+Prerequisites:
 
 - Python 3.11+
-- PostgreSQL database
-- Poetry (for dependency management)
+- PostgreSQL (recommended) or default DB configured in `core/settings.py`
+- Poetry (optional)
 
-## Setup Instructions
-
-### 1. Install Dependencies
+Quick start (poetry):
 
 ```bash
-# Install Poetry if you haven't already
-curl -sSL https://install.python-poetry.org | python3 -
-
-# Install project dependencies
 poetry install
-```
-
-### 2. Database Setup
-
-Create a PostgreSQL database:
-
-```bash
-# Connect to PostgreSQL
-psql -U postgres
-
-# Create database
-CREATE DATABASE thopa_sichai_db;
-
-# Exit psql
-\q
-```
-
-### 3. Environment Variables
-
-Set the following environment variables (or use defaults):
-
-```bash
-export DB_NAME=thopa_sichai_db
-export DB_USER=postgres
-export DB_PASSWORD=postgres
-export DB_HOST=localhost
-export DB_PORT=5432
-export SECRET_KEY=your-secret-key-here
-export DEBUG=True
-export ALLOWED_HOSTS=localhost,127.0.0.1
-```
-
-### 4. Run Migrations
-
-```bash
-# Activate Poetry shell
 poetry shell
-
-# Create and apply migrations
-python manage.py makemigrations
+cp .env.example .env  # adapt environment variables as needed
 python manage.py migrate
-```
-
-### 5. Create Logs Directory
-
-```bash
+python manage.py createsuperuser
 mkdir -p logs
-```
-
-### 6. Run Development Server
-
-```bash
 python manage.py runserver
 ```
 
-The API will be available at `http://localhost:8000/api/`
-
-## API Endpoints
-
-All endpoints are unauthenticated and return JSON responses.
-
-### 1. GET - List All Records
-
-**Endpoint:** `GET /api/soil-moisture/`
-
-**Query Parameters:**
-- `page` (optional): Page number (default: 1)
-- `page_size` (optional): Records per page (default: 100, max: 1000)
-
-**Example Request:**
-```bash
-curl http://localhost:8000/api/soil-moisture/?page=1&page_size=10
-```
-
-**Example Response:**
-```json
-{
-  "success": true,
-  "data": {
-    "records": [
-      {
-        "id": "550e8400-e29b-41d4-a716-446655440000",
-        "data": {"moisture_level": 45.5, "sensor_id": "sensor_001"},
-        "metadata": {"location": "field_1", "temperature": 25.3},
-        "ip_address": "192.168.1.100",
-        "created_at": "2024-01-15T10:30:00Z",
-        "updated_at": "2024-01-15T10:30:00Z"
-      }
-    ],
-    "pagination": {
-      "page": 1,
-      "page_size": 10,
-      "total_count": 1,
-      "total_pages": 1
-    }
-  },
-  "message": "Records retrieved successfully"
-}
-```
-
-### 2. POST - Create New Record
-
-**Endpoint:** `POST /api/soil-moisture/create/`
-
-**Request Body:**
-```json
-{
-  "data": {
-    "moisture_level": 45.5,
-    "sensor_id": "sensor_001"
-  },
-  "metadata": {
-    "location": "field_1",
-    "temperature": 25.3
-  },
-  "ip_address": "192.168.1.100"
-}
-```
-
-**Note:** `ip_address` is optional - if not provided, it will be extracted from the request.
-
-**Example Request:**
-```bash
-curl -X POST http://localhost:8000/api/soil-moisture/create/ \
-  -H "Content-Type: application/json" \
-  -d '{
-    "data": {"moisture_level": 45.5, "sensor_id": "sensor_001"},
-    "metadata": {"location": "field_1"},
-    "ip_address": "192.168.1.100"
-  }'
-```
-
-**Example Response:**
-```json
-{
-  "success": true,
-  "data": {
-    "id": "550e8400-e29b-41d4-a716-446655440000",
-    "data": {"moisture_level": 45.5, "sensor_id": "sensor_001"},
-    "metadata": {"location": "field_1"},
-    "ip_address": "192.168.1.100",
-    "created_at": "2024-01-15T10:30:00Z",
-    "updated_at": "2024-01-15T10:30:00Z"
-  },
-  "message": "Record created successfully"
-}
-```
-
-### 3. PUT - Update Record
-
-**Endpoint:** `PUT /api/soil-moisture/<uuid>/update/`
-
-**Request Body:**
-```json
-{
-  "data": {
-    "moisture_level": 50.0,
-    "sensor_id": "sensor_001"
-  },
-  "metadata": {
-    "location": "field_1",
-    "temperature": 26.0
-  },
-  "ip_address": "192.168.1.100"
-}
-```
-
-**Example Request:**
-```bash
-curl -X PUT http://localhost:8000/api/soil-moisture/550e8400-e29b-41d4-a716-446655440000/update/ \
-  -H "Content-Type: application/json" \
-  -d '{
-    "data": {"moisture_level": 50.0, "sensor_id": "sensor_001"},
-    "metadata": {"location": "field_1"},
-    "ip_address": "192.168.1.100"
-  }'
-```
-
-**Example Response:**
-```json
-{
-  "success": true,
-  "data": {
-    "id": "550e8400-e29b-41d4-a716-446655440000",
-    "data": {"moisture_level": 50.0, "sensor_id": "sensor_001"},
-    "metadata": {"location": "field_1"},
-    "ip_address": "192.168.1.100",
-    "created_at": "2024-01-15T10:30:00Z",
-    "updated_at": "2024-01-15T10:35:00Z"
-  },
-  "message": "Record updated successfully"
-}
-```
-
-### 4. DELETE - Delete Record
-
-**Endpoint:** `DELETE /api/soil-moisture/<uuid>/delete/`
-
-**Example Request:**
-```bash
-curl -X DELETE http://localhost:8000/api/soil-moisture/550e8400-e29b-41d4-a716-446655440000/delete/
-```
-
-**Example Response:**
-```json
-{
-  "success": true,
-  "message": "Record 550e8400-e29b-41d4-a716-446655440000 deleted successfully"
-}
-```
-
-## Error Responses
-
-All endpoints return structured error responses:
-
-```json
-{
-  "success": false,
-  "errors": {
-    "field_name": ["Error message"]
-  }
-}
-```
-
-## Database Schema
-
-### SoilMoisture Table
-
-| Column | Type | Description |
-|--------|------|-------------|
-| id | UUID | Primary key (auto-generated) |
-| data | JSONB | Main data field (required) |
-| metadata | JSONB | Optional metadata field |
-| ip_address | VARCHAR(45) | IP address of data source |
-| created_at | TIMESTAMP | Auto-generated on creation |
-| updated_at | TIMESTAMP | Auto-updated on modification |
-
-## Logging
-
-Logs are written to:
-- Console (stdout)
-- File: `logs/django.log`
-
-Log levels:
-- `INFO`: General information and successful operations
-- `WARNING`: Validation errors and non-critical issues
-- `ERROR`: Exceptions and critical errors
-
-## Validation Rules
-
-- `data`: Must be a non-empty JSON object
-- `metadata`: Must be a JSON object or null
-- `ip_address`: Must be a valid IPv4 or IPv6 address
-- `page`: Must be a positive integer
-- `page_size`: Must be between 1 and 1000
-
-## Development
-
-### Running Tests
+Create a device token (one per physical node):
 
 ```bash
-poetry run pytest
+python manage.py shell
+from django.contrib.auth.models import User
+from rest_framework.authtoken.models import Token
+user = User.objects.create_user(username='esp32_device')
+token = Token.objects.create(user=user)
+print(token.key)
 ```
 
-### Creating Superuser
+Use the printed key in your MicroPython device as `IOT_API_TOKEN`.
+
+## ESP32: MicroPython usage
+
+- Primary responsibilities:
+  - Connect to Wi-Fi
+  - Read ADC (calibrated) and compute moisture percentage
+  - POST telemetry to `/api/soil-moisture/receive/` with `Authorization: Token <key>` and `metadata.device_id`
+  - GET `/api/soil-moisture/latest/?device_id=<id>` to receive motor instructions
+
+Example header from the device:
+
+```
+Authorization: Token <your_token_here>
+```
+
+Important: In production, set `IOT_API_TOKEN` on the device from a secure provisioning process; do not store in source control.
+
+## Testing
+
+Run the test suite:
 
 ```bash
-python manage.py createsuperuser
+python manage.py test
 ```
 
-### Accessing Admin Panel
+Unit tests cover the ingestion flow, device auto-registration, and motor logic.
 
-Visit `http://localhost:8000/admin/` after creating a superuser.
+## Project structure
 
-## Project Structure
+See the repository for a full breakdown. Key directories:
 
-```
-.
-├── core/                 # Main project directory
-│   ├── settings.py       # Django settings
-│   ├── urls.py           # Main URL configuration
-│   └── ...
-├── iot/        # Soil moisture app
-│   ├── models.py         # SoilMoisture model
-│   ├── serializers.py    # DRF serializers
-│   ├── views.py          # API views
-│   ├── urls.py           # App URL configuration
-│   └── ...
-├── esp32/                # ESP32 integration code
-│   └── esp32_to_django_backend.py
-├── docs/                 # Documentation files
-│   ├── CURL_EXAMPLES.md
-│   └── STEPS.md
-├── manage.py             # Django management script
-├── pyproject.toml        # Poetry dependencies
-└── README.md             # This file
-```
-
-## License
-
-This project is for development purposes.
-
+- `core/` — Django project settings and top-level routing
+- `iot/` — Application containing models, serializers, views, services, and tests
+- `esp32/` — MicroPython client code used on physical ESP32 devices
+- `docs/` — Additional documentation and CURL examples
