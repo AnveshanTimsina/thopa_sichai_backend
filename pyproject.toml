@@ -1,5 +1,5 @@
 [tool.poetry]
-name = "anveshan-project"
+name = "thopa-sichai"
 version = "0.1.0"
 description = "Django project for SoilMoisture API"
 authors = ["Your Name <you@example.com>"]

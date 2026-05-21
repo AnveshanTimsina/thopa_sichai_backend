@@ -1,3 +1,0 @@
-"""
-thopa_sichai package
-"""

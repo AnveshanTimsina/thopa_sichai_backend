@@ -1,15 +1,19 @@
 import logging
 from rest_framework import serializers
 from .models import SoilMoisture
-import ipaddress
 
-logger = logging.getLogger('soil_moisture')
+logger = logging.getLogger('iot')
 
 
 class SoilMoistureSerializer(serializers.ModelSerializer):
     """
     Serializer for SoilMoisture model with proper validation.
     """
+    ip_address = serializers.IPAddressField(
+        required=True,
+        error_messages={"invalid": "Invalid IP address format.", "required": "IP address is required."}
+    )
+
     class Meta:
         model = SoilMoisture
         fields = ['id', 'data', 'metadata', 'ip_address', 'created_at', 'updated_at']
@@ -17,10 +21,10 @@ class SoilMoistureSerializer(serializers.ModelSerializer):
 
     def validate_data(self, value):
         """
-        Validate that data is a valid JSON object (dict).
+        Validate that data is a valid non-empty JSON object (dict).
         """
         if not isinstance(value, dict):
-            logger.warning(f"Invalid data type: {type(value)}, expected dict")
+            logger.warning("Invalid data type: %s, expected dict", type(value))
             raise serializers.ValidationError("Data must be a valid JSON object.")
         if not value:
             logger.warning("Empty data object provided")
@@ -32,40 +36,24 @@ class SoilMoistureSerializer(serializers.ModelSerializer):
         Validate that metadata is a valid JSON object (dict) if provided.
         """
         if value is not None and not isinstance(value, dict):
-            logger.warning(f"Invalid metadata type: {type(value)}, expected dict")
+            logger.warning("Invalid metadata type: %s, expected dict", type(value))
             raise serializers.ValidationError("Metadata must be a valid JSON object or null.")
-        return value
-
-    def validate_ip_address(self, value):
-        """
-        Validate IP address format (supports both IPv4 and IPv6).
-        """
-        if not value:
-            raise serializers.ValidationError("IP address is required.")
-        
-        try:
-            ipaddress.ip_address(value)
-        except ValueError:
-            logger.warning(f"Invalid IP address format: {value}")
-            raise serializers.ValidationError("Invalid IP address format.")
-        
         return value
 
     def create(self, validated_data):
         """
-        Create a new SoilMoisture instance with logging.
+        Create a new SoilMoisture instance.
         """
-        logger.info(f"Creating new SoilMoisture record from IP: {validated_data.get('ip_address')}")
+        logger.info("Creating new SoilMoisture record from IP: %s", validated_data.get('ip_address'))
         instance = super().create(validated_data)
-        logger.info(f"Successfully created SoilMoisture record with ID: {instance.id}")
+        logger.info("Successfully created SoilMoisture record with ID: %s", instance.id)
         return instance
 
     def update(self, instance, validated_data):
         """
-        Update a SoilMoisture instance with logging.
+        Update a SoilMoisture instance.
         """
-        logger.info(f"Updating SoilMoisture record with ID: {instance.id}")
+        logger.info("Updating SoilMoisture record with ID: %s", instance.id)
         instance = super().update(instance, validated_data)
-        logger.info(f"Successfully updated SoilMoisture record with ID: {instance.id}")
+        logger.info("Successfully updated SoilMoisture record with ID: %s", instance.id)
         return instance
-

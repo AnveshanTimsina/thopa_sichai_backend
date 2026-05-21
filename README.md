@@ -1,4 +1,4 @@
-# Anveshan Project - Soil Moisture API
+# Thopa Sichai - Soil Moisture API
 
 A Django REST Framework API for managing soil moisture data with PostgreSQL database.
 
@@ -38,7 +38,7 @@ Create a PostgreSQL database:
 psql -U postgres
 
 # Create database
-CREATE DATABASE anveshan_db;
+CREATE DATABASE thopa_sichai_db;
 
 # Exit psql
 \q
@@ -49,7 +49,7 @@ CREATE DATABASE anveshan_db;
 Set the following environment variables (or use defaults):
 
 ```bash
-export DB_NAME=anveshan_db
+export DB_NAME=thopa_sichai_db
 export DB_USER=postgres
 export DB_PASSWORD=postgres
 export DB_HOST=localhost
@@ -304,17 +304,22 @@ Visit `http://localhost:8000/admin/` after creating a superuser.
 ## Project Structure
 
 ```
-anveshan_project/
-├── anveshan_project/      # Main project directory
-│   ├── settings.py        # Django settings
+.
+├── core/                 # Main project directory
+│   ├── settings.py       # Django settings
 │   ├── urls.py           # Main URL configuration
 │   └── ...
-├── soil_moisture/        # Soil moisture app
+├── iot/        # Soil moisture app
 │   ├── models.py         # SoilMoisture model
 │   ├── serializers.py    # DRF serializers
 │   ├── views.py          # API views
 │   ├── urls.py           # App URL configuration
 │   └── ...
+├── esp32/                # ESP32 integration code
+│   └── esp32_to_django_backend.py
+├── docs/                 # Documentation files
+│   ├── CURL_EXAMPLES.md
+│   └── STEPS.md
 ├── manage.py             # Django management script
 ├── pyproject.toml        # Poetry dependencies
 └── README.md             # This file

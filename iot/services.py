@@ -1,7 +1,11 @@
 import logging
 from typing import Any, Optional
+from .models import SoilMoisture, MotorState
 
-logger = logging.getLogger('soil_moisture')
+logger = logging.getLogger('iot')
+
+MOISTURE_LOW = 35.0
+MOISTURE_HIGH = 45.0
 
 
 def _find_numeric_value(obj: Any) -> Optional[float]:
@@ -33,20 +37,12 @@ def _find_numeric_value(obj: Any) -> Optional[float]:
 def determine_motor_state(latest_reading: dict, threshold: float) -> dict:
     """
     Determine desired motor state based on the latest reading and a threshold.
-
-    Rules:
-    - Attempts to extract a numeric moisture value from `latest_reading`.
-    - If a numeric value is found and is strictly less than `threshold`, motor should be 'on' (water).
-    - If value >= threshold, motor should be 'off'.
-    - If no numeric value found, returns state 'unknown' with a reason.
-
-    Returns a dict with keys: `motor_state`, `reason`, `reading_value`.
     """
     try:
         value = _find_numeric_value(latest_reading)
 
         if value is None:
-            logger.warning('No numeric sensor value found in latest reading')
+            logger.warning("No numeric sensor value found in latest reading")
             return {
                 'motor_state': 'unknown',
                 'reason': 'no_numeric_value_found',
@@ -66,25 +62,26 @@ def determine_motor_state(latest_reading: dict, threshold: float) -> dict:
             'reading_value': value,
         }
 
-    except Exception as e:
-        logger.error(f'Error determining motor state: {e}', exc_info=True)
+    except Exception:
+        logger.exception("Error determining motor state")
         return {
             'motor_state': 'unknown',
             'reason': 'error_evaluating_reading',
             'reading_value': None,
         }
-from .models import SoilMoisture, MotorState
 
-MOISTURE_LOW = 35
-MOISTURE_HIGH = 45
 
-def update_motor_state():
+def update_motor_state() -> None:
+    """
+    Updates the persistent MotorState based on the most recent SoilMoisture logic.
+    """
     latest = SoilMoisture.objects.order_by("-created_at").first()
 
     if not latest:
         return
 
-    moisture = latest.data.get("moisture_level")
+    # Use the robust numeric finder instead of hardcoding key lookup
+    moisture = _find_numeric_value(latest.data)
     if moisture is None:
         return
 
@@ -92,7 +89,6 @@ def update_motor_state():
 
     if moisture < MOISTURE_LOW:
         motor_state.is_on = True
-
     elif moisture > MOISTURE_HIGH:
         motor_state.is_on = False
 

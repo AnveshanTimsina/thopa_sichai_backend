@@ -57,8 +57,4 @@ Thumbs.db
 .env.local
 
 # Poetry
-poetry.lock
 
-STEPS.md
-TODO.md
-CURL_EXAMPLES.md

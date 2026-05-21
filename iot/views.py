@@ -1,7 +1,9 @@
 import logging
 from rest_framework import status
-from rest_framework.decorators import api_view
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
+from rest_framework.pagination import PageNumberPagination
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError
 from .models import SoilMoisture
@@ -9,96 +11,74 @@ from .serializers import SoilMoistureSerializer
 from .services import determine_motor_state
 from django.views.decorators.csrf import csrf_exempt
 
-logger = logging.getLogger('soil_moisture')
+logger = logging.getLogger('iot')
 
 
 def create_response(success=True, data=None, message=None, errors=None, status_code=status.HTTP_200_OK):
     """
     Create a structured response format for all API endpoints.
     """
-    response_data = {
-        'success': success,
-    }
-    
+    response_data = {'success': success}
     if data is not None:
         response_data['data'] = data
-    
     if message:
         response_data['message'] = message
-    
     if errors:
         response_data['errors'] = errors
-    
     return Response(response_data, status=status_code)
 
 
+class IotPagination(PageNumberPagination):
+    page_size = 100
+    page_size_query_param = 'page_size'
+    max_page_size = 1000
+    
+    def get_paginated_response(self, data):
+        return create_response(
+            success=True,
+            data={
+                'records': data,
+                'pagination': {
+                    'page': self.page.number,
+                    'page_size': self.page.paginator.per_page,
+                    'total_count': self.page.paginator.count,
+                    'total_pages': self.page.paginator.num_pages
+                }
+            },
+            message='Records retrieved successfully'
+        )
+
+
 @api_view(['GET'])
-def list_soil_moisture(request):
+@permission_classes([IsAuthenticated])
+def list_iot(request):
     """
     GET endpoint to retrieve all SoilMoisture records.
     Supports pagination via query parameters: page, page_size
     """
     try:
-        logger.info(f"GET request received from IP: {request.META.get('REMOTE_ADDR')}")
+        logger.info("GET request received from IP: %s", request.META.get('REMOTE_ADDR'))
         
-        # Get pagination parameters
-        page = request.query_params.get('page', 1)
-        page_size = request.query_params.get('page_size', 100)
+        queryset = SoilMoisture.objects.all()
+        paginator = IotPagination()
         
         try:
-            page = int(page)
-            page_size = int(page_size)
-        except ValueError:
-            logger.warning(f"Invalid pagination parameters: page={page}, page_size={page_size}")
+            paginated_queryset = paginator.paginate_queryset(queryset, request)
+        except Exception as e:
+            logger.warning("Pagination error: %s", str(e))
             return create_response(
                 success=False,
-                errors={'pagination': 'Page and page_size must be integers'},
+                errors={'pagination': 'Invalid pagination parameters'},
                 status_code=status.HTTP_400_BAD_REQUEST
             )
+            
+        serializer = SoilMoistureSerializer(paginated_queryset, many=True)
+        logger.info("Retrieved %d records for current page.", len(paginated_queryset))
         
-        # Validate pagination parameters
-        if page < 1:
-            return create_response(
-                success=False,
-                errors={'page': 'Page must be greater than 0'},
-                status_code=status.HTTP_400_BAD_REQUEST
-            )
-        
-        if page_size < 1 or page_size > 1000:
-            return create_response(
-                success=False,
-                errors={'page_size': 'Page size must be between 1 and 1000'},
-                status_code=status.HTTP_400_BAD_REQUEST
-            )
-        
-        # Calculate offset
-        offset = (page - 1) * page_size
-        
-        # Query database
-        queryset = SoilMoisture.objects.all()
-        total_count = queryset.count()
-        records = queryset[offset:offset + page_size]
-        
-        serializer = SoilMoistureSerializer(records, many=True)
-        
-        logger.info(f"Retrieved {len(records)} records (page {page}, total: {total_count})")
-        
-        return create_response(
-            success=True,
-            data={
-                'records': serializer.data,
-                'pagination': {
-                    'page': page,
-                    'page_size': page_size,
-                    'total_count': total_count,
-                    'total_pages': (total_count + page_size - 1) // page_size if total_count > 0 else 0
-                }
-            },
-            message='Records retrieved successfully'
-        )
+        return paginator.get_paginated_response(serializer.data)
     
     except Exception as e:
-        logger.error(f"Error retrieving SoilMoisture records: {str(e)}", exc_info=True)
+        logger.exception("Error retrieving records")
         return create_response(
             success=False,
             errors={'detail': 'An error occurred while retrieving records'},
@@ -107,48 +87,46 @@ def list_soil_moisture(request):
 
 
 @api_view(['POST'])
-def create_soil_moisture(request):
+@permission_classes([IsAuthenticated])
+def create_iot(request):
     """
     POST endpoint to create a new SoilMoisture record.
     """
     try:
-        logger.info(f"POST request received from IP: {request.META.get('REMOTE_ADDR')}")
+        remote_ip = request.META.get('REMOTE_ADDR', 'unknown')
+        logger.info("POST request received from IP: %s", remote_ip)
         
-        # Extract IP address from request if not provided
         data = request.data.copy()
         if 'ip_address' not in data:
-            data['ip_address'] = request.META.get('REMOTE_ADDR', 'unknown')
+            data['ip_address'] = remote_ip
         
         serializer = SoilMoistureSerializer(data=data)
         
         if serializer.is_valid():
             instance = serializer.save()
-            logger.info(f"Successfully created SoilMoisture record with ID: {instance.id}")
-            
             return create_response(
                 success=True,
                 data=serializer.data,
                 message='Record created successfully',
                 status_code=status.HTTP_201_CREATED
             )
-        else:
-            logger.warning(f"Validation errors: {serializer.errors}")
-            return create_response(
-                success=False,
-                errors=serializer.errors,
-                status_code=status.HTTP_400_BAD_REQUEST
-            )
+            
+        logger.warning("Validation errors: %s", serializer.errors)
+        return create_response(
+            success=False,
+            errors=serializer.errors,
+            status_code=status.HTTP_400_BAD_REQUEST
+        )
     
-    except IntegrityError as e:
-        logger.error(f"Integrity error creating record: {str(e)}")
+    except IntegrityError:
+        logger.error("Integrity error creating record", exc_info=True)
         return create_response(
             success=False,
             errors={'detail': 'Database integrity error occurred'},
             status_code=status.HTTP_400_BAD_REQUEST
         )
-    
-    except Exception as e:
-        logger.error(f"Error creating SoilMoisture record: {str(e)}", exc_info=True)
+    except Exception:
+        logger.exception("Error creating record")
         return create_response(
             success=False,
             errors={'detail': 'An error occurred while creating the record'},
@@ -157,17 +135,18 @@ def create_soil_moisture(request):
 
 
 @api_view(['PUT'])
-def update_soil_moisture(request, pk):
+@permission_classes([IsAuthenticated])
+def update_iot(request, pk):
     """
     PUT endpoint to update an existing SoilMoisture record.
     """
     try:
-        logger.info(f"PUT request received for ID: {pk} from IP: {request.META.get('REMOTE_ADDR')}")
+        logger.info("PUT request received for ID: %s from IP: %s", pk, request.META.get('REMOTE_ADDR'))
         
         try:
             instance = SoilMoisture.objects.get(pk=pk)
         except SoilMoisture.DoesNotExist:
-            logger.warning(f"SoilMoisture record with ID {pk} not found")
+            logger.warning("SoilMoisture record with ID %s not found", pk)
             return create_response(
                 success=False,
                 errors={'detail': 'Record not found'},
@@ -178,31 +157,28 @@ def update_soil_moisture(request, pk):
         
         if serializer.is_valid():
             instance = serializer.save()
-            logger.info(f"Successfully updated SoilMoisture record with ID: {instance.id}")
-            
             return create_response(
                 success=True,
                 data=serializer.data,
                 message='Record updated successfully'
             )
-        else:
-            logger.warning(f"Validation errors: {serializer.errors}")
-            return create_response(
-                success=False,
-                errors=serializer.errors,
-                status_code=status.HTTP_400_BAD_REQUEST
-            )
+            
+        logger.warning("Validation errors: %s", serializer.errors)
+        return create_response(
+            success=False,
+            errors=serializer.errors,
+            status_code=status.HTTP_400_BAD_REQUEST
+        )
     
     except ValidationError as e:
-        logger.error(f"Validation error: {str(e)}")
+        logger.error("Validation error: %s", str(e))
         return create_response(
             success=False,
             errors={'detail': str(e)},
             status_code=status.HTTP_400_BAD_REQUEST
         )
-    
-    except Exception as e:
-        logger.error(f"Error updating SoilMoisture record: {str(e)}", exc_info=True)
+    except Exception:
+        logger.exception("Error updating record")
         return create_response(
             success=False,
             errors={'detail': 'An error occurred while updating the record'},
@@ -211,17 +187,18 @@ def update_soil_moisture(request, pk):
 
 
 @api_view(['DELETE'])
-def delete_soil_moisture(request, pk):
+@permission_classes([IsAuthenticated])
+def delete_iot(request, pk):
     """
     DELETE endpoint to delete a SoilMoisture record.
     """
     try:
-        logger.info(f"DELETE request received for ID: {pk} from IP: {request.META.get('REMOTE_ADDR')}")
+        logger.info("DELETE request received for ID: %s from IP: %s", pk, request.META.get('REMOTE_ADDR'))
         
         try:
             instance = SoilMoisture.objects.get(pk=pk)
         except SoilMoisture.DoesNotExist:
-            logger.warning(f"SoilMoisture record with ID {pk} not found")
+            logger.warning("SoilMoisture record with ID %s not found", pk)
             return create_response(
                 success=False,
                 errors={'detail': 'Record not found'},
@@ -230,7 +207,7 @@ def delete_soil_moisture(request, pk):
         
         instance_id = instance.id
         instance.delete()
-        logger.info(f"Successfully deleted SoilMoisture record with ID: {instance_id}")
+        logger.info("Successfully deleted SoilMoisture record with ID: %s", instance_id)
         
         return create_response(
             success=True,
@@ -238,18 +215,23 @@ def delete_soil_moisture(request, pk):
             status_code=status.HTTP_200_OK
         )
     
-    except Exception as e:
-        logger.error(f"Error deleting SoilMoisture record: {str(e)}", exc_info=True)
+    except Exception:
+        logger.exception("Error deleting record")
         return create_response(
             success=False,
             errors={'detail': 'An error occurred while deleting the record'},
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
 
+
 @csrf_exempt
 @api_view(["POST"])
-def receive_soil_moisture(request):
-    print("Received JSON:", request.data)
+@permission_classes([IsAuthenticated])
+def receive_iot(request):
+    """
+    Special POST endpoint for ESP32 payload ingestion.
+    """
+    logger.info("Received iot data payload.")
 
     serializer = SoilMoistureSerializer(data={
         "data": request.data.get("data"),
@@ -259,22 +241,21 @@ def receive_soil_moisture(request):
 
     if serializer.is_valid():
         serializer.save()
-        return Response({"status": "ok"}, status=201)
+        return Response({"status": "ok"}, status=status.HTTP_201_CREATED)
 
-    return Response(serializer.errors, status=400)
+    logger.warning("Invalid ESP32 iot payload: %s", serializer.errors)
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
 @api_view(['GET'])
-def latest_soil_moisture(request):
+@permission_classes([IsAuthenticated])
+def latest_iot(request):
     """
-    GET endpoint to retrieve the latest SoilMoisture record and a motor decision.
-
-    Query params:
-    - `threshold` (optional float): moisture threshold to decide motor state. Default: 30.0
+    GET endpoint to retrieve the latest SoilMoisture record and motor decision.
     """
     try:
-        threshold_param = request.query_params.get('threshold')
         DEFAULT_THRESHOLD = 40.0
+        threshold_param = request.query_params.get('threshold')
 
         if threshold_param is None:
             threshold = DEFAULT_THRESHOLD
@@ -299,18 +280,15 @@ def latest_soil_moisture(request):
 
         motor_decision = determine_motor_state(latest.data, threshold)
 
-        payload = {
+        return Response({
             'motor_state': motor_decision.get('motor_state'),
             'reading_value': motor_decision.get('reading_value'),
-        }
-        return Response(payload, status=status.HTTP_200_OK)
+        }, status=status.HTTP_200_OK)
 
-    except Exception as e:
-        logger.error(f"Error retrieving latest SoilMoisture record: {str(e)}", exc_info=True)
+    except Exception:
+        logger.exception("Error retrieving latest record")
         return create_response(
             success=False,
             errors={'detail': 'An error occurred while retrieving the latest record'},
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
-
-
