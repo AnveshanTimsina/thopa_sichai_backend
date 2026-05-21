@@ -1,16 +1,21 @@
 from django.test import TestCase
 from rest_framework.test import APIClient
-from .models import SoilMoisture
+from django.contrib.auth.models import User
+from rest_framework.authtoken.models import Token
+from .models import SoilMoisture, Device
 
 class ESP32IntegrationTest(TestCase):
     def setUp(self):
         self.client = APIClient()
+        self.user = User.objects.create_user(username='test_device', password='pw')
+        self.token = Token.objects.create(user=self.user)
+        self.client.credentials(HTTP_AUTHORIZATION='Token ' + self.token.key)
 
     def test_esp32_receive_iot(self):
         # We now send a float percentage (e.g., 43.3) to mimic the new hardware ADC conversion
         payload = {
             "data": {"moisture_level": 43.3},
-            "metadata": {"location": "ku"},
+            "metadata": {"location": "ku", "device_id": "test_node_01"},
             "ip_address": "192.168.1.10" 
         }
         
@@ -26,6 +31,8 @@ class ESP32IntegrationTest(TestCase):
         
         record = SoilMoisture.objects.first()
         self.assertEqual(record.ip_address, '192.168.1.55')
+        self.assertIsNotNone(record.device)
+        self.assertEqual(record.device.device_id, "test_node_01")
         # Check that floating point data is accurately retained by JSONField
         self.assertEqual(record.data['moisture_level'], 43.3)
 
