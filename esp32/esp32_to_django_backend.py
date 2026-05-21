@@ -66,7 +66,7 @@ def connect_wifi(timeout_sec=30):
     print(f"Connected successfully with IP: {ip}")
     return ip
 
-def send_telemetry_data(ip_address, moisture_level, location="ku"):
+def send_telemetry_data(ip_address, moisture_level, location="ku", device_id="esp32_node_01"):
     """
     Constructs and sends telemetry payload to the Django backend.
     """
@@ -76,6 +76,7 @@ def send_telemetry_data(ip_address, moisture_level, location="ku"):
         },
         "metadata": {
             "location": location,
+            "device_id": device_id
         },
         "ip_address": ip_address
     }
@@ -106,13 +107,13 @@ def send_telemetry_data(ip_address, moisture_level, location="ku"):
             del response
         gc.collect()
 
-def fetch_and_actuate_motor(relay):
+def fetch_and_actuate_motor(relay, device_id="esp32_node_01"):
     """
     Fetches the analytics command from Django server and controls the physical water pump via Relay.
     """
     try:
         gc.collect()
-        url = f"{BASE_URL}/latest/"
+        url = f"{BASE_URL}/latest/?device_id={device_id}"
         headers = {
             "Authorization": f"Token {IOT_API_TOKEN}",
             "Connection": "close"

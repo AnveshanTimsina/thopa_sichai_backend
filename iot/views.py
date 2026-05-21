@@ -60,6 +60,10 @@ def list_iot(request):
         logger.info("GET request received from IP: %s", request.META.get('REMOTE_ADDR'))
         
         queryset = SoilMoisture.objects.all()
+        device_id = request.query_params.get('device_id')
+        if device_id:
+            queryset = queryset.filter(device__device_id=device_id)
+
         paginator = IotPagination()
         
         try:
@@ -256,6 +260,7 @@ def latest_iot(request):
     try:
         DEFAULT_THRESHOLD = 40.0
         threshold_param = request.query_params.get('threshold')
+        device_id = request.query_params.get('device_id')
 
         if threshold_param is None:
             threshold = DEFAULT_THRESHOLD
@@ -269,7 +274,11 @@ def latest_iot(request):
                     status_code=status.HTTP_400_BAD_REQUEST
                 )
 
-        latest = SoilMoisture.objects.order_by('-created_at').first()
+        queryset = SoilMoisture.objects.all()
+        if device_id:
+            queryset = queryset.filter(device__device_id=device_id)
+
+        latest = queryset.order_by('-created_at').first()
 
         if latest is None:
             return create_response(

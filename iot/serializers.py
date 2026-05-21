@@ -1,6 +1,6 @@
 import logging
 from rest_framework import serializers
-from .models import SoilMoisture
+from .models import SoilMoisture, Device
 
 logger = logging.getLogger('iot')
 
@@ -44,7 +44,20 @@ class SoilMoistureSerializer(serializers.ModelSerializer):
         """
         Create a new SoilMoisture instance.
         """
-        logger.info("Creating new SoilMoisture record from IP: %s", validated_data.get('ip_address'))
+        ip_addr = validated_data.get('ip_address')
+        logger.info("Creating new SoilMoisture record from IP: %s", ip_addr)
+        
+        metadata = validated_data.get('metadata', {}) or {}
+        device_id = metadata.get('device_id')
+        
+        device_obj = None
+        if device_id:
+            device_obj, created = Device.objects.get_or_create(
+                device_id=device_id,
+                defaults={'name': f"Auto-Registered Node: {device_id}"}
+            )
+            validated_data['device'] = device_obj
+            
         instance = super().create(validated_data)
         logger.info("Successfully created SoilMoisture record with ID: %s", instance.id)
         return instance

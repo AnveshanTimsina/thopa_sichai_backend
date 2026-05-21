@@ -71,11 +71,15 @@ def determine_motor_state(latest_reading: dict, threshold: float) -> dict:
         }
 
 
-def update_motor_state() -> None:
+def update_motor_state(device_obj=None) -> None:
     """
-    Updates the persistent MotorState based on the most recent SoilMoisture logic.
+    Updates the persistent MotorState based on the most recent SoilMoisture logic for a device.
     """
-    latest = SoilMoisture.objects.order_by("-created_at").first()
+    queryset = SoilMoisture.objects.all()
+    if device_obj:
+        queryset = queryset.filter(device=device_obj)
+
+    latest = queryset.order_by("-created_at").first()
 
     if not latest:
         return
@@ -85,7 +89,11 @@ def update_motor_state() -> None:
     if moisture is None:
         return
 
-    motor_state, _ = MotorState.objects.get_or_create(id=1)
+    if device_obj:
+        motor_state, _ = MotorState.objects.get_or_create(device=device_obj)
+    else:
+        # Fallback for global
+        motor_state, _ = MotorState.objects.get_or_create(device__isnull=True)
 
     if moisture < MOISTURE_LOW:
         motor_state.is_on = True
